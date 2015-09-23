@@ -30,6 +30,7 @@ from cmmodule  import sam_header
 from cmmodule  import myutils
 from cmmodule  import fasta
 from cmmodule  import bgrMerge
+from pyfaidx import Fasta
 
 __author__ = "Liguo Wang, Hao Zhao"
 __contributor__="Liguo Wang, Hao Zhao"
@@ -51,7 +52,7 @@ def printlog (mesg_lst):
 
 def parse_header( line ):
         return dict( [ field.split( '=' ) for field in line.split()[1:] ] )
-        
+
 def wiggleReader( f ):
 	"""
     Iterator yielding chrom, start, end, strand, value.
@@ -92,7 +93,7 @@ def wiggleReader( f ):
 					yield fields[0], int( fields[1] ), int( fields[2] ), fields[5], float( fields[3] )
 				else:
 					yield fields[0], int( fields[1] ), int( fields[2] ), strand, float( fields[3] )
-		elif mode == "variableStep": 
+		elif mode == "variableStep":
 			fields = line.split()
 			pos = int( fields[0] ) - 1
 			yield current_chrom, pos, pos + current_span, strand, float( fields[1] )
@@ -115,7 +116,7 @@ def bigwigReader(infile, chrom_sizes=None, bin_size = 2000):
 				continue
 			sig_list = np.nan_to_num(sig_list)
 			if np.sum(sig_list)==0:
-				continue	
+				continue
 			low_bound = st
 			point_num = 1
 			score = sig_list[0]
@@ -128,7 +129,7 @@ def bigwigReader(infile, chrom_sizes=None, bin_size = 2000):
 					low_bound = low_bound + point_num
 					point_num = 1
 
-			
+
 def check_bed12(bedline):
 	'''check if bed12 format is correct or not'''
 	fields = bedline.strip().split()
@@ -164,7 +165,7 @@ def check_bed12(bedline):
 
 def intersectBed((chr1, st1, end1), (chr2, st2, end2)):
 	'''return intersection of two bed regions'''
-	
+
 	if int(st1) > int(end1) or int(st2) > int(end2):
 		raise Exception ("Start cannot be larger than end")
 	if chr1 != chr2:
@@ -176,14 +177,14 @@ def intersectBed((chr1, st1, end1), (chr2, st2, end2)):
 def read_chain_file (chain_file, print_table=False):
 	'''input chain_file could be either plain text, compressed file (".gz", ".Z", ".z", ".bz", ".bz2", ".bzip2"),
 	or a URL pointing to the chain file ("http://", "https://", "ftp://"). If url was used, chain file must be plain text'''
-	
+
 	printlog(["Read chain_file: ", chain_file]),
 	maps={}
 	target_chromSize={}
 	source_chromSize={}
 	if print_table:
 		blocks=[]
-	
+
 	for line in ireader.reader(chain_file):
 		# Example: chain 4900 chrY 58368225 + 25985403 25985638 chr5 151006098 - 43257292 43257528 1
 		if not line.strip():
@@ -191,8 +192,8 @@ def read_chain_file (chain_file, print_table=False):
 		line=line.strip()
 		if line.startswith(('#',' ')):continue
 		fields = line.split()
-		
-		if fields[0] == 'chain' and len(fields) in [12, 13]: 
+
+		if fields[0] == 'chain' and len(fields) in [12, 13]:
   			score = int(fields[1])        # Alignment score
 			source_name = fields[2]       # E.g. chrY
 			source_size = int(fields[3])  # Full length of the chromosome
@@ -201,7 +202,7 @@ def read_chain_file (chain_file, print_table=False):
 				raise Exception("Source strand in an .over.chain file must be +. (%s)" % line)
 			source_start = int(fields[5]) # Start of source region
 			source_end = int(fields[6])   # End of source region
-        
+
 			target_name = fields[7]       # E.g. chr5
 			target_size = int(fields[8])  # Full length of the chromosome
 			target_strand = fields[9]     # + or -
@@ -209,7 +210,7 @@ def read_chain_file (chain_file, print_table=False):
 			target_end = int(fields[11])
 			target_chromSize[target_name]= target_size
 			source_chromSize[source_name] = source_size
-			
+
 			if target_strand not in ['+', '-']:
 				raise Exception("Target strand must be - or +. (%s)" % line)
 			#if target_strand == '+':
@@ -220,50 +221,50 @@ def read_chain_file (chain_file, print_table=False):
 			#	target_end = target_size - target_start
 			chain_id = None if len(fields) == 12 else fields[12]
 			if source_name not in maps:
-				maps[source_name] = Intersecter()			
-			
+				maps[source_name] = Intersecter()
+
 			sfrom, tfrom = source_start, target_start
-       		
-        # Now read the alignment chain from the file and store it as a list (source_from, source_to) -> (target_from, target_to) 		
-		elif fields[0] != 'chain' and len(fields) == 3: 
+
+        # Now read the alignment chain from the file and store it as a list (source_from, source_to) -> (target_from, target_to)
+		elif fields[0] != 'chain' and len(fields) == 3:
 			size, sgap, tgap = int(fields[0]), int(fields[1]), int(fields[2])
 			if print_table:
 				if target_strand == '+': blocks.append((source_name,sfrom, sfrom+size, source_strand, target_name, tfrom, tfrom+size, target_strand))
 				elif  target_strand == '-': blocks.append((source_name,sfrom, sfrom+size, source_strand, target_name, target_size - (tfrom+size), target_size - tfrom, target_strand))
-				
+
 			if target_strand == '+':
 				maps[source_name].add_interval( Interval(sfrom, sfrom+size,(target_name,tfrom, tfrom+size,target_strand)))
 			elif  target_strand == '-':
 				maps[source_name].add_interval( Interval(sfrom, sfrom+size,(target_name,target_size - (tfrom+size), target_size - tfrom, target_strand)))
-				
+
 			sfrom += size + sgap
 			tfrom += size + tgap
-		
-		elif fields[0] != 'chain' and len(fields) == 1: 
+
+		elif fields[0] != 'chain' and len(fields) == 1:
 			size = int(fields[0])
 			if print_table:
 				if target_strand == '+': blocks.append((source_name,sfrom, sfrom+size, source_strand, target_name, tfrom, tfrom+size, target_strand))
 				elif  target_strand == '-': blocks.append((source_name,sfrom, sfrom+size, source_strand, target_name, target_size - (tfrom+size), target_size - tfrom, target_strand))
-					
-			if target_strand == '+':		
+
+			if target_strand == '+':
 				maps[source_name].add_interval( Interval(sfrom, sfrom+size,(target_name,tfrom, tfrom+size,target_strand)))
 			elif target_strand == '-':
 				maps[source_name].add_interval( Interval(sfrom, sfrom+size,(target_name,target_size - (tfrom+size), target_size - tfrom, target_strand)))
 		else:
 				raise Exception("Invalid chain format. (%s)" % line)
 	if (sfrom + size) != source_end  or (tfrom + size) != target_end:
-		raise Exception("Alignment blocks do not match specified block sizes. (%s)" % header)		
-	
+		raise Exception("Alignment blocks do not match specified block sizes. (%s)" % header)
+
 	if print_table:
 		for i in blocks:
 			print '\t'.join([str(n) for n in i])
-	
-	return (maps,target_chromSize, source_chromSize)	
-	
+
+	return (maps,target_chromSize, source_chromSize)
+
 
 def map_coordinates(mapping, q_chr, q_start, q_end, q_strand='+', print_match=False):
 	'''Map coordinates from source assembly to target assembly'''
-	
+
 	matches=[]
 	complement ={'+':'-','-':'+'}
 	if q_chr not in mapping:
@@ -279,12 +280,12 @@ def map_coordinates(mapping, q_chr, q_start, q_end, q_strand='+', print_match=Fa
 			t_start = targets[0].value[1]
 			t_end = targets[0].value[2]
 			t_strand = targets[0].value[3]
-			
+
 			(chr, real_start, real_end)  = intersectBed((q_chr,q_start,q_end),(q_chr,s_start,s_end))
 			l_offset = abs(real_start - s_start)
 			#r_offset = real_end - s_end
 			size = abs(real_end - real_start)
-			
+
 			matches.append( (chr, real_start, real_end,q_strand))
 			if t_strand == '+':
 				i_start = t_start + l_offset
@@ -300,7 +301,7 @@ def map_coordinates(mapping, q_chr, q_start, q_end, q_strand='+', print_match=Fa
 					matches.append( (t_chrom, i_start,  i_start + size, complement[t_strand]))
 			else:
 				raise Exception("Unknown strand: %s. Can only be '+' or '-'." % q_strand)
-			
+
 		elif len(targets) > 1:
 			for t in targets:
 				s_start = t.start
@@ -309,7 +310,7 @@ def map_coordinates(mapping, q_chr, q_start, q_end, q_strand='+', print_match=Fa
 				t_start = t.value[1]
 				t_end = t.value[2]
 				t_strand = t.value[3]
-				
+
 				(chr, real_start, real_end)  = intersectBed((q_chr,q_start,q_end),(q_chr,s_start,s_end))
 
 				l_offset = abs(real_start - s_start)
@@ -331,30 +332,32 @@ def map_coordinates(mapping, q_chr, q_start, q_end, q_strand='+', print_match=Fa
 						matches.append( (t_chrom, i_start,  i_start + size, complement[t_strand]))
 				else:
 					raise Exception("Unknown strand: %s. Can only be '+' or '-'." % q_strand)
-	
+
 	if print_match:
 		print matches
 		# input: 'chr1',246974830,247024835
 		# output: [('chr1', 246974830, 246974833, '+' ), ('chr1', 248908207, 248908210, '+' ), ('chr1', 247024833, 247024835, '+'), ('chr1', 249058210, 249058212,'+')]
 		# [('chr1', 246974830, 246974833), ('chr1', 248908207, 248908210)]
-	
+
 	return matches
-	
+
 def crossmap_vcf_file(mapping, infile,outfile, liftoverfile, refgenome):
 	'''Convert genome coordinate in VCF format.'''
-	
+
 	#index refegenome file if it hasn't been done
 	if not os.path.exists(refgenome + '.fai'):
 		printlog(["Creating index for", refgenome])
 		pysam.faidx(refgenome)
-	
+
 	FILE_OUT = open(outfile ,'w')
 	UNMAP = open(outfile + '.unmap','w')
-	
+
 	total = 0
 	fail = 0
 	withChr = False
-	
+
+	ref = Fasta(refgenome)
+
 	for line in ireader.reader(infile):
 		if not line.strip():
 			continue
@@ -392,12 +395,14 @@ def crossmap_vcf_file(mapping, infile,outfile, liftoverfile, refgenome):
 					fields[0] = str(a[1][0]).replace('chr','')
 				# update start coordinate
 				fields[1] = a[1][1] + 1
-				
-				
+
+				seq = ref[a[1][0]][a[1][1]:a[1][2]]
+				fields[3] = str(seq).upper()
+
 				# update ref allele
 				tmp = pysam.faidx(refgenome,str(a[1][0]) + ':' + str(a[1][1]+1) + '-' + str(a[1][2]))
 				fields[3] =tmp[-1].rstrip('\n\r').upper()
-				
+
 				if fields[3] != fields[4]:
 					print >>FILE_OUT, '\t'.join(map(str, fields))
 				else:
@@ -411,14 +416,14 @@ def crossmap_vcf_file(mapping, infile,outfile, liftoverfile, refgenome):
 	UNMAP.close()
 	printlog (["Total entries:", str(total)])
 	printlog (["Failed to map:", str(fail)])
-				
-			
+
+
 def crossmap_bed_file(mapping, inbed,outfile=None):
 	'''
 	Convert genome coordinates (in bed format) between assemblies.
 	BED format: http://genome.ucsc.edu/FAQ/FAQformat.html#format1
 	'''
-	
+
 	# check if 'outfile' was set. If not set, print to screen, if set, print to file
 	if outfile is not None:
 		FILE_OUT = open(outfile,'w')
@@ -433,7 +438,7 @@ def crossmap_bed_file(mapping, inbed,outfile=None):
 		line=line.strip()
 		fields=line.split()
 		strand = '+'
-		
+
 		# filter out line less than 3 columns
 		if len(fields)<3:
 			print >>sys.stderr, "Less than 3 fields. skip " + line
@@ -442,7 +447,7 @@ def crossmap_bed_file(mapping, inbed,outfile=None):
 			int(fields[1])
 		except:
 			print >>sys.stderr, "Start corrdinate is not an integer. skip " + line
-			continue		
+			continue
 		try:
 			int(fields[2])
 		except:
@@ -451,10 +456,10 @@ def crossmap_bed_file(mapping, inbed,outfile=None):
 		if int(fields[1]) > int(fields[2]):
 			print >>sys.stderr, "\"Start\" is larger than \"End\" corrdinate is not an integer. skip " + line
 			continue
-			
+
 		# deal with bed less than 12 columns
 		if len(fields)<12:
-			
+
 			# try to reset strand
 			try:
 				for f in fields:
@@ -462,7 +467,7 @@ def crossmap_bed_file(mapping, inbed,outfile=None):
 						strand = f
 			except:
 				pass
-				
+
 			a = map_coordinates(mapping, fields[0], int(fields[1]),int(fields[2]),strand)
 			# example of a: [('chr1', 246974830, 246974833,'+'), ('chr1', 248908207, 248908210,'+')]
 			try:
@@ -471,7 +476,7 @@ def crossmap_bed_file(mapping, inbed,outfile=None):
 						print line + '\tFail'
 					continue
 				if len(a) == 2:
-					
+
 					#reset fields
 					fields[0] = a[1][0]
 					fields[1] = a[1][1]
@@ -479,7 +484,7 @@ def crossmap_bed_file(mapping, inbed,outfile=None):
 					for i in range(0,len(fields)):	#update the strand information
 						if fields[i] in ['+','-']:
 							fields[i] = a[1][3]
-					
+
 					if outfile is None:
 						print line + '\t->\t' + '\t'.join([str(i) for i in fields])
 					else:
@@ -494,7 +499,7 @@ def crossmap_bed_file(mapping, inbed,outfile=None):
 						for i in range(0,len(fields)):	#update the strand information
 							if fields[i] in ['+','-']:
 								fields[i] = a[j][3]
-						
+
 						if outfile is None:
 							print line + '\t'+ '(split.' + str(count) + ':' + ':'.join([str(i) for i in a[j-1]]) + ')\t' + '\t'.join([str(i) for i in fields])
 						else:
@@ -503,7 +508,7 @@ def crossmap_bed_file(mapping, inbed,outfile=None):
 				if outfile is None:
 					print line + '\tFail'
 				continue
-		
+
 		# deal with bed12
 		if len(fields)==12:
 			strand = fields[5]
@@ -520,22 +525,22 @@ def crossmap_bed_file(mapping, inbed,outfile=None):
 					fail_flag =1
 					break
 				if len(a) == 2:
-					exons_new_pos.append(a[1]) 
+					exons_new_pos.append(a[1])
 					# a has two elements, first is query, 2nd is target. # [('chr1', 246974830, 246974833,'+'), ('chr1', 248908207, 248908210,'+')]
 				else:
 					fail_flag =1
 					break
-			
+
 			if fail_flag == 1:
 				if outfile is None:
 					print line + '\tFail'
 				else:
 					continue
-			
+
 			# check if all exons were mapped to the same chromosome the same strand
 			chr_id = set()
 			exon_strand = set()
-			
+
 			for e_chr, e_start, e_end, e_strand in exons_new_pos:
 				chr_id.add(e_chr)
 				exon_strand.add(e_strand)
@@ -544,26 +549,26 @@ def crossmap_bed_file(mapping, inbed,outfile=None):
 					print line + '\tFail'
 				else:
 					continue
-						
-			# build new bed 
+
+			# build new bed
 			cds_start_offset = int(fields[6]) - int(fields[1])
 			cds_end_offset = int(fields[2]) - int(fields[7])
-			
-			
-			
+
+
+
 			new_chrom = exons_new_pos[0][0]
 			new_chrom_st = exons_new_pos[0][1]
 			new_chrom_end = exons_new_pos[-1][2]
 			new_name = fields[3]
 			new_score = fields[4]
-			new_strand = exons_new_pos[0][3]	
+			new_strand = exons_new_pos[0][3]
 			new_thickStart = new_chrom_st + cds_start_offset
 			new_thickEnd = new_chrom_end - cds_end_offset
 			new_ittemRgb = fields[8]
 			new_blockCount = len(exons_new_pos)
 			new_blockSizes = ','.join([str(o - n) for m,n,o,p in exons_new_pos])
 			new_blockStarts = ','.join([str(n - new_chrom_st) for m,n,o,p in exons_new_pos])
-				
+
 			new_bedline = '\t'.join(str(i) for i in (new_chrom,new_chrom_st,new_chrom_end,new_name,new_score,new_strand,new_thickStart,new_thickEnd,new_ittemRgb,new_blockCount,new_blockSizes,new_blockStarts))
 			if check_bed12(new_bedline) is False:
 				if outfile is None:
@@ -575,12 +580,12 @@ def crossmap_bed_file(mapping, inbed,outfile=None):
 					print line + '\t->\t' + new_bedline
 				else:
 					print >>FILE_OUT, new_bedline
-				
-def crossmap_gff_file(mapping, ingff,outfile=None):			
+
+def crossmap_gff_file(mapping, ingff,outfile=None):
 	'''
 	Convert genome coordinates (in GFF/GTF format) between assemblies.
 	GFF (General Feature Format) lines have nine required fields that must be Tab-separated:
-	
+
     1. seqname - The name of the sequence. Must be a chromosome or scaffold.
     2. source - The program that generated this feature.
     3. feature - The name of this type of feature. Some examples of standard feature types
@@ -596,30 +601,30 @@ def crossmap_gff_file(mapping, ingff,outfile=None):
        represents the reading frame of the first base. If the feature is not a coding exon,
        the value should be '.'.
     9. group - All lines with the same group are linked together into a single item.
-    
+
     GFF format: http://genome.ucsc.edu/FAQ/FAQformat.html#format3
-    
+
     GTF (Gene Transfer Format) is a refinement to GFF that tightens the specification. The
     first eight GTF fields are the same as GFF. The group field has been expanded into a
     list of attributes. Each attribute consists of a type/value pair. Attributes must end
-    in a semi-colon, and be separated from any following attribute by exactly one space. 
-    
+    in a semi-colon, and be separated from any following attribute by exactly one space.
+
     GTF format: http://genome.ucsc.edu/FAQ/FAQformat.html#format4
-    
+
     We do NOT check if features (exon, CDS, etc) belonging to the same gene originally were
-    converted into the same chromosome/strand. 
-    '''	
-    
+    converted into the same chromosome/strand.
+    '''
+
 	if outfile is not None:
 		FILE_OUT = open(outfile,'w')
-    
+
 	for line in ireader.reader(ingff):
 		if line.startswith('#'):continue
 		if line.startswith('track'):continue
 		if line.startswith('browser'):continue
 		if line.startswith('visibility'):continue
 		if not line.strip():continue
-		
+
 		line=line.strip()
 		fields=line.split('\t')
 		# check GFF file
@@ -636,7 +641,7 @@ def crossmap_gff_file(mapping, ingff,outfile=None):
 		if fields[6] not in ['+','-','.']:
 			print >>sys.stderr, 'Cannot recognize \"strand\". Skip ' + line
 			continue
-		
+
 		strand = '-' if fields[6] == '-' else '+'
 
 		chrom = fields[0]
@@ -644,7 +649,7 @@ def crossmap_gff_file(mapping, ingff,outfile=None):
 		if a is None:
 			if outfile is None:
 				print line + '\tfail (no match to target assembly)'
-			continue			
+			continue
 		if len(a) !=2:
 			if outfile is None:
 				print line + '\tfail (multpile match to target assembly)'
@@ -653,22 +658,22 @@ def crossmap_gff_file(mapping, ingff,outfile=None):
 				if outfile is None:
 					print line + '\tfail (not exact match)'
 			fields[0] = a[1][0]			# chrom
-			fields[3] = a[1][1] + 1		# start, 1-based 
+			fields[3] = a[1][1] + 1		# start, 1-based
 			fields[4] = a[1][2]
 			fields[6] = a[1][3]
-			
+
 			if outfile is None:
 				print line + '\t->\t' + '\t'.join([str(i) for i in fields])
 			else:
 				print >>FILE_OUT, '\t'.join([str(i) for i in fields])
-			
-def crossmap_bam_file(mapping, chainfile, infile,  outfile_prefix, chrom_size, IS_size=200, IS_std=30, fold=3):			
+
+def crossmap_bam_file(mapping, chainfile, infile,  outfile_prefix, chrom_size, IS_size=200, IS_std=30, fold=3):
 	'''
 	Convert genome coordinates (in BAM/SAM format) between assemblies.
 	BAM/SAM format: http://samtools.sourceforge.net/
 	chrom_size is target chromosome size
 	'''
-	
+
 	# bam or sam
 	try:
 		samfile = pysam.Samfile(infile,'rb')
@@ -682,13 +687,13 @@ def crossmap_bam_file(mapping, chainfile, infile,  outfile_prefix, chrom_size, I
 			print >>sys.stderr, "SAM file has no header section. Exit!"
 			sys.exit(1)
 		bam_format = False
-	
+
 	sam_ori_header = samfile.header
 	comments=['Liftover from original BAM/SAM file: ' + infile]
 	comments.append('Liftover is based on the chain file: ' + chainfile)
-	
+
 	(new_header, name_to_id) = sam_header.bam_header_generator(orig_header = sam_ori_header, chrom_size = chrom_size, prog_name="CrossMap",prog_ver = __version__, format_ver=1.0,sort_type = 'coordinate',co=comments)
-	
+
 	if outfile_prefix is not None:
 		if bam_format:
 			OUT_FILE = pysam.Samfile( outfile_prefix + '.bam', "wb", header = new_header )
@@ -709,7 +714,7 @@ def crossmap_bam_file(mapping, chainfile, infile,  outfile_prefix, chrom_size, I
 			printlog (["Liftover BAM file:", infile])
 		#print >>sys.stderr, "aa"
 		#sys.exit(2)
-	
+
 	total_item = 0
 	failed = 0
 	try:
@@ -717,7 +722,7 @@ def crossmap_bam_file(mapping, chainfile, infile,  outfile_prefix, chrom_size, I
 			total_item += 1
 			new_alignment = pysam.AlignedRead()	# create AlignedRead object
 			old_alignment = samfile.next()
-			
+
 			#if old_alignment.is_unmapped:
 			#	OUT_FILE_UNMAP.write(old_alignment)
 			#	failed += 1
@@ -730,30 +735,30 @@ def crossmap_bam_file(mapping, chainfile, infile,  outfile_prefix, chrom_size, I
 			# new_alignment.qlen = old_alignment.qlen	# length of the "aligned part of read"
 			# new_alignment. aligned_pairs = old_alignment. aligned_pairs	#read coordinates <=> ref coordinates
 			# new_alignment_aend = old_alignment.aend		# reference End position of the aligned part (of read)
-			
+
 			#new_alignment.qname = old_alignment.qname	# 1st column. read name.
-			#new_alignment.flag = old_alignment.flag	# 2nd column. subject to change. flag value 
+			#new_alignment.flag = old_alignment.flag	# 2nd column. subject to change. flag value
 			#new_alignment.tid = old_alignment.tid		# 3rd column. samfile.getrname(tid) == chrom name
 			#new_alignment.pos = old_alignment.pos		# 4th column. reference Start position of the aligned part (of read) [0-based]
 			#new_alignment.mapq = old_alignment.mapq	# 5th column. mapping quality
-			#new_alignment.cigar= old_alignment.cigar	# 6th column. subject to change. 
+			#new_alignment.cigar= old_alignment.cigar	# 6th column. subject to change.
 			#new_alignment.rnext = old_alignment.rnext	# 7th column. tid of the reference (mate read mapped to)
 			#new_alignment.pnext = old_alignment.pnext	# 8th column. position of the reference (0 based, mate read mapped to)
 			#new_alignment.tlen = old_alignment.tlen	# 9th column. insert size
 			#new_alignment.seq = old_alignment.seq		# 10th column. read sequence. all bases.
 			#new_alignment.qual = old_alignment.qual		# 11th column. read sequence quality. all bases.
 			#new_alignment.tags = old_alignment.tags		# 12 - columns
-			
+
 			new_alignment.qname = old_alignment.qname	# 1st column. read name.
 			new_alignment.seq = old_alignment.seq		# 10th column. read sequence. all bases.
 			new_alignment.qual = old_alignment.qual		# 11th column. read sequence quality. all bases.
 			new_alignment.tags = old_alignment.tags		# 12 - columns
-			
+
 			if old_alignment.is_paired:
 				new_alignment.flag = 0x0001
 				if old_alignment.is_read1: new_alignment.flag = new_alignment.flag | 0x40
 				if old_alignment.is_read2: new_alignment.flag = new_alignment.flag | 0x80
-				
+
 				if old_alignment.is_unmapped:
 					OUT_FILE_UNMAP.write(old_alignment)
 					failed += 1
@@ -770,10 +775,10 @@ def crossmap_bam_file(mapping, chainfile, infile,  outfile_prefix, chrom_size, I
 					read1_start = old_alignment.pos
 					read1_end = old_alignment.aend
 					read1_maps = map_coordinates(mapping, read1_chr, read1_start, read1_end, read1_strand)
-				
+
 					if not old_alignment.mate_is_unmapped:
 						try:
-							read2_chr = samfile.getrname(old_alignment.rnext)									
+							read2_chr = samfile.getrname(old_alignment.rnext)
 							read2_strand = '-' if old_alignment.mate_is_reverse else '+'
 							read2_start = old_alignment.pnext
 							read2_end = read2_start + 1
@@ -781,30 +786,30 @@ def crossmap_bam_file(mapping, chainfile, infile,  outfile_prefix, chrom_size, I
 							# [('chr1', 246974830, 246974833, '+' ), ('chr1', 248908207, 248908210, '+' )]
 						except:
 							read2_maps = None
-				
-				
-				# read 1 is unmapped after conversion	
-				if read1_maps is None:														 
+
+
+				# read 1 is unmapped after conversion
+				if read1_maps is None:
 					new_alignment.flag = new_alignment.flag | 0x4
-					
+
 					# read2 is unmapped before conversion
 					if old_alignment.mate_is_unmapped:
 						OUT_FILE_UNMAP.write(old_alignment)
 						failed += 1
 						continue
-					
-					# read2 is unmapped after conversion	
-					elif read2_maps is None:													
-						#new_alignment.flag = new_alignment.flag | 0x8	
-						#old_alignment.tid = name_to_id[samfile.getrname(old_alignment.tid)]				
+
+					# read2 is unmapped after conversion
+					elif read2_maps is None:
+						#new_alignment.flag = new_alignment.flag | 0x8
+						#old_alignment.tid = name_to_id[samfile.getrname(old_alignment.tid)]
 						OUT_FILE_UNMAP.write(old_alignment)
 						failed += 1
 						continue
-					
+
 					# read2 is unique mapped
-					elif len(read2_maps) == 2:	
-						# 2											
-						if read2_maps[1][3] == '-': new_alignment.flag = new_alignment.flag | 0x20		
+					elif len(read2_maps) == 2:
+						# 2
+						if read2_maps[1][3] == '-': new_alignment.flag = new_alignment.flag | 0x20
 						# 3
 						new_alignment.tid = name_to_id[read2_maps[1][0]]
 						# 4
@@ -822,11 +827,11 @@ def crossmap_bam_file(mapping, chainfile, infile,  outfile_prefix, chrom_size, I
 						OUT_FILE.write(new_alignment)
 
 						continue
-					
+
 					# read2 is multiple mapped
 					else:
 						# 2
-						if read2_maps[1][3] == '-': new_alignment.flag = new_alignment.flag | 0x20		
+						if read2_maps[1][3] == '-': new_alignment.flag = new_alignment.flag | 0x20
 						# 2
 						new_alignment.flag = new_alignment.flag | 0x100
 						# 3
@@ -845,10 +850,10 @@ def crossmap_bam_file(mapping, chainfile, infile,  outfile_prefix, chrom_size, I
 						new_alignment.tlen = 0
 						OUT_FILE.write(new_alignment)
 						continue
-				
+
 				# read1 is unique mapped
 				elif len(read1_maps) == 2:
-					
+
 					# 2
 					if read1_maps[1][3] == '-': new_alignment.flag = new_alignment.flag | 0x10
 					# 3
@@ -856,10 +861,10 @@ def crossmap_bam_file(mapping, chainfile, infile,  outfile_prefix, chrom_size, I
 					# 4
 					new_alignment.pos = read1_maps[1][1]	#start
 					# 5
-					new_alignment.mapq = old_alignment.mapq	
+					new_alignment.mapq = old_alignment.mapq
 					# 6
 					new_alignment.cigar = old_alignment.cigar
-					
+
 					# read2 unmapped before or after conversion
 					if (old_alignment.mate_is_unmapped) or (read2_maps is None):
 						# 2
@@ -870,10 +875,10 @@ def crossmap_bam_file(mapping, chainfile, infile,  outfile_prefix, chrom_size, I
 						new_alignment.pnext =  0
 						# 9
 						new_alignment.tlen = 0
-					
+
 						OUT_FILE.write(new_alignment)
 						continue
-					
+
 					# read2 is unique mapped
 					elif len(read2_maps)==2:
 						# 2
@@ -882,14 +887,14 @@ def crossmap_bam_file(mapping, chainfile, infile,  outfile_prefix, chrom_size, I
 						new_alignment.rnext = name_to_id[read2_maps[1][0]]	#chrom
 						# 8
 						new_alignment.pnext =  read2_maps[1][1]
-						# 9						
+						# 9
 						new_alignment.tlen = abs(new_alignment.pos - new_alignment.pnext) -1 - old_alignment.alen
 						# 2
 						if (read2_maps[1][3] != read1_maps[1][3]) and (new_alignment.tlen <= IS_size + fold * IS_std) and (new_alignment.tlen >= IS_size - fold * IS_std):
 							new_alignment.flag = new_alignment.flag | 0x2
 						OUT_FILE.write(new_alignment)
 						continue
-					
+
 					# read2 is multiple mapped
 					else:
 						# 2 (strand)
@@ -902,20 +907,20 @@ def crossmap_bam_file(mapping, chainfile, infile,  outfile_prefix, chrom_size, I
 						new_alignment.pnext =  read2_maps[1][1]	#start
 						# 9
 						new_alignment.tlen = abs(new_alignment.pos - new_alignment.pnext) -1 - old_alignment.alen
-						
+
 						OUT_FILE.write(new_alignment)
 						continue
-				
+
 				# read1 is multiple mapped
 				elif len(read1_maps) > 2 and len(read1_maps) % 2 ==0:
 					# 2
-					new_alignment.flag = new_alignment.flag | 0x100						
+					new_alignment.flag = new_alignment.flag | 0x100
 					# 2
 					if read1_maps[1][3] == '-': new_alignment.flag = new_alignment.flag | 0x10
 					# 3
 					new_alignment.tid = name_to_id[read1_maps[1][0]]	#chrom
 					# 4
-					new_alignment.pos = read1_maps[1][1]	#start	
+					new_alignment.pos = read1_maps[1][1]	#start
 					# 5
 					new_alignment.mapq = 255
 					# 6
@@ -931,10 +936,10 @@ def crossmap_bam_file(mapping, chainfile, infile,  outfile_prefix, chrom_size, I
 						new_alignment.pnext =  0
 						# 9
 						new_alignment.tlen = 0
-					
+
 						OUT_FILE.write(new_alignment)
 						continue
-					
+
 					# read2 is unique mapped
 					elif len(read2_maps)==2:
 						# 2
@@ -943,12 +948,12 @@ def crossmap_bam_file(mapping, chainfile, infile,  outfile_prefix, chrom_size, I
 						new_alignment.rnext = name_to_id[read2_maps[1][0]]	#chrom
 						# 8
 						new_alignment.pnext =  read2_maps[1][1]
-						# 9						
+						# 9
 						new_alignment.tlen = abs(new_alignment.pos - new_alignment.pnext) -1 - old_alignment.alen
-						
+
 						OUT_FILE.write(new_alignment)
-						continue		
-					
+						continue
+
 					# read2 is multiple mapped
 					else:
 						# 2 (strand)
@@ -961,12 +966,12 @@ def crossmap_bam_file(mapping, chainfile, infile,  outfile_prefix, chrom_size, I
 						new_alignment.pnext =  read2_maps[1][1]	#start
 						# 9
 						new_alignment.tlen = abs(new_alignment.pos - new_alignment.pnext) -1 - old_alignment.alen
-						
+
 						OUT_FILE.write(new_alignment)
-						continue				
+						continue
 				else:
-					#old_alignment.tid = name_to_id[samfile.getrname(old_alignment.tid)]	
-					OUT_FILE_UNMAP.write(old_alignment)	
+					#old_alignment.tid = name_to_id[samfile.getrname(old_alignment.tid)]
+					OUT_FILE_UNMAP.write(old_alignment)
 					failed += 1
 			# Singel end sequencing
 			else:
@@ -977,16 +982,16 @@ def crossmap_bam_file(mapping, chainfile, infile,  outfile_prefix, chrom_size, I
 				new_alignment.flag = 0
 				read_chr = samfile.getrname(old_alignment.tid)
 				read_strand = '-' if old_alignment.is_reverse else '+'
-				
+
 				read_start = old_alignment.pos
 				read_end = old_alignment.aend
-				
+
 				read_maps = map_coordinates(mapping, read_chr, read_start, read_end, read_strand)
-				
+
 				# unmapped
 				if read_maps is None:
 					#new_alignment.flag = new_alignment.flag | 0x4
-					#old_alignment.tid = name_to_id[samfile.getrname(old_alignment.tid)]	
+					#old_alignment.tid = name_to_id[samfile.getrname(old_alignment.tid)]
 					OUT_FILE_UNMAP.write(old_alignment)
 					failed += 1
 					continue
@@ -1018,21 +1023,21 @@ def crossmap_bam_file(mapping, chainfile, infile,  outfile_prefix, chrom_size, I
 					new_alignment.cigar = old_alignment.cigar
 					OUT_FILE.write(new_alignment)
 					continue
-					
-								
+
+
 	except StopIteration:
-		printlog(["Done!"])	
+		printlog(["Done!"])
 	printlog (["Total entries:", str(total_item)])
 	printlog (["Failed to map:", str(failed)])
-	
+
 	if outfile_prefix is not None:
 		if bam_format:
 			printlog (['Sort "%s" ...' % (outfile_prefix + '.bam')])
 			pysam.sort('-m','1000000000',outfile_prefix + '.bam', outfile_prefix + '.sorted')
 			printlog (['Index "%s" ...' % (outfile_prefix + '.sorted.bam')])
 			pysam.index(outfile_prefix + '.sorted.bam',outfile_prefix + '.sorted.bam.bai')
-	
-	
+
+
 
 def crossmap_wig_file(mapping, in_file, out_prefix, source_chrom_size, taget_chrom_size, in_format, binSize=100000):
 	'''Convert genome coordinates (in wiggle/bigwig format) between assemblies.
@@ -1046,7 +1051,7 @@ def crossmap_wig_file(mapping, in_file, out_prefix, source_chrom_size, taget_chr
 	if in_format.upper() == "WIGGLE":
 		printlog (["Liftover wiggle file:", in_file, '==>', out_prefix + '.bgr'])
 		#print >>sys.stderr, 'liftover wiggle format file is strongly discouraged.\nIt is slow and genrated largefile.\nConvert it into bigwig will increase speed and reduce file size'
-		
+
 		for chr, start, end, strand, score in wiggleReader (in_file):
 			#print chr,start,end,score
 			# map_coordinates(mapping, q_chr, q_start, q_end, q_strand = '+', print_match=False):
@@ -1059,15 +1064,15 @@ def crossmap_wig_file(mapping, in_file, out_prefix, source_chrom_size, taget_chr
 				continue
 			maps[:]=[]
 		OUT_FILE1.close()
-		
+
 		printlog (["Merging overlapped entries in bedGraph file ..."])
 		for (chr, start, end, score) in bgrMerge.merge(out_prefix + '.bgr'):
 			print >>OUT_FILE2, '\t'.join([str(i) for i in (chr, start, end, score )])
 		OUT_FILE2.close()
-		
+
 		os.remove(out_prefix + '.bgr')
-			
-		wigToBigWig_cmd = myutils.which('wigToBigWig') 
+
+		wigToBigWig_cmd = myutils.which('wigToBigWig')
 		if wigToBigWig_cmd is not None:
 			printlog (["Convert wiggle to bigwig ..."])
 			tmp_file = bgrMerge.randomword(10) + '.chromsize'
@@ -1087,10 +1092,10 @@ def crossmap_wig_file(mapping, in_file, out_prefix, source_chrom_size, taget_chr
 		else:
 			printlog('Could not find wigToBigWig executable. Try to download it from "http://hgdownload.cse.ucsc.edu/admin/exe/" and convert wig to bigwig by yourself.')
 
-		
-	
+
+
 	elif in_format.upper() == "BIGWIG":
-		
+
 		printlog (["Liftover bigwig file:", in_file, '==>', out_prefix + '.bgr'])
 		for chr, start, end, score in bigwigReader(in_file, chrom_sizes =source_chrom_size, bin_size = binSize ):
 			if score == 0:	#skip range with score of 0
@@ -1106,13 +1111,13 @@ def crossmap_wig_file(mapping, in_file, out_prefix, source_chrom_size, taget_chr
 				continue
 			maps[:]=[]
 		OUT_FILE1.close()
-		
+
 		printlog (["Merging overlapped entries in bedGraph file ..."])
 		for (chr, start, end, score) in bgrMerge.merge(out_prefix + '.bgr'):
 			print >>OUT_FILE2, '\t'.join([str(i) for i in (chr, start, end, score )])
-		OUT_FILE2.close()	
-			
-		wigToBigWig_cmd = myutils.which('wigToBigWig') 
+		OUT_FILE2.close()
+
+		wigToBigWig_cmd = myutils.which('wigToBigWig')
 		if wigToBigWig_cmd is not None:
 			printlog (["Convert wiggle to bigwig ..."])
 			tmp_file = bgrMerge.randomword(10) + '.chromsize'
@@ -1128,19 +1133,19 @@ def crossmap_wig_file(mapping, in_file, out_prefix, source_chrom_size, taget_chr
 			try:
 				os.remove(tmp_file)
 			except:
-				pass				
+				pass
 		else:
 			printlog(['Could not find wigToBigWig executable. Try to download it from "http://hgdownload.cse.ucsc.edu/admin/exe/" and convert wig to bigwig by yourself.'])
-				
+
 	else:
 		raise Exception("Unknown foramt. Must be 'wiggle' or 'bigwig'")
-	
+
 
 def general_help():
 	desc="""CrossMap is a program for convenient conversion of genome coordinates and genome\
 annotation files between assemblies (eg. lift from human hg18 to hg19 or vice versa).\
 It supports file in BAM, SAM, BED, Wiggle, BigWig, GFF, GTF and VCF format."""
-	
+
 	print >>sys.stderr, "Program: %s (v%s)" % ("CrossMap", __version__)
 	print >>sys.stderr, "\nDescription: \n%s" % '\n'.join('  '+i for i in wrap(desc,width=80))
 	print >>sys.stderr, "\nUsage: CrossMap.py <command> [options]\n"
@@ -1157,7 +1162,7 @@ def bed_help():
 	]
 	for i,j in msg:
 		print >>sys.stderr, '\n' + i + '\n' + '\n'.join(['  ' + k for k in wrap(j,width=80)])
-	
+
 def gff_help():
 	msg =[
 	('Usage:', "CrossMap.py gff input_chain_file input_gff_file output_file"),
@@ -1199,28 +1204,28 @@ def vcf_help():
 	for i,j in msg:
 		print >>sys.stderr, '\n' + i + '\n' + '\n'.join(['  ' + k for k in wrap(j,width=80)])
 
-	
+
 if __name__=='__main__':
 
 	# test read_chain_file()
 	#(mapTree,targetChromSizes, sourceChromSizes) = read_chain_file(sys.argv[1], print_table=True)
-	
+
 	#q_chr, q_start, q_end, q_strand = '+', print_match=False):
 	#map_coordinates(mapTree, 'chr1', 45953452, 45953456, '+', print_match=True)
-		
-	
+
+
 	#a= sam_header.bam_header_generator(chrom_size = targetChromSizes, prog_name="CrossMap",prog_ver = __version__, format_ver=1.0,sort_type = 'coordinate',co=['a','b','c'])
 	#crossmap_bed_file(mapTree, 'test.hg18.bed3',outfile='aa')
 	#crossmap_bed_file(mapTree, 'test.bed')
 	#crossmap_gff_file(mapTree,'test.hg18.gtf',outfile = 'aa')
-	
-	
+
+
 	#crossmap_bam_file(mapTree, targetChromSizes, sys.argv[1], 'eg.abnormal.sam','out')
 	#printlog (['Sort output bam file ...'])
 	#pysam.sort('-m','1000000000','out.bam','out.sorted')
 	#printlog (['Index bam file ...'])
 	#pysam.index('out.sorted.bam','out.sorted.bam.bai')
-	
+
 	#crossmap_wig_file(mapTree, 'GSM686950_reverse.hg18.bw', 'GSM686950_reverse.hg19', sourceChromSizes, targetChromSizes, in_format = 'bigwig')
 
 	#parser = optparse.OptionParser()
@@ -1230,11 +1235,11 @@ if __name__=='__main__':
 	#parser.add_option("-s","--insert-stdev",action="store",type="float",dest="insert_size_stdev", default=30.0, help="Stanadard deviation of insert size. [default=%default]" )
 	#parser.add_option("-t","--times-of-stdev",action="store",type="float",dest="insert_size_fold", default=3.0, help="A mapped pair is considered as \"proper pair\" if both ends mapped to different strand and the distance between them is less then '-t' * stdev from the mean. [default=%default]")
 	#(options,args)=parser.parse_args()
-	
+
 	#print options
 	#print args
-	
-	
+
+
 	commands = {
 	'bed':'convert genome cooridnate or annotation file in BED or BED-like format.',
 	'bam':'convert alignment file in BAM or SAM format.',
@@ -1242,10 +1247,10 @@ if __name__=='__main__':
 	'wig':'convert genome coordinate file in Wiggle, or bedGraph format.',
 	'bigwig':'convert genome coordinate file in BigWig format.',
 	'vcf':'convert genome coordinate file in VCF format.'
-	}	
+	}
 	kwds = commands.keys()
 
-	
+
 	if len(sys.argv) == 1:
 		general_help()
 		sys.exit(0)
@@ -1304,29 +1309,29 @@ if __name__=='__main__':
 				bigwig_help()
 				sys.exit(0)
 		elif sys.argv[1].lower() == 'bam':
-		#def crossmap_bam_file(mapping, chainfile, infile,  outfile_prefix, chrom_size, IS_size=200, IS_std=30, fold=3):	
+		#def crossmap_bam_file(mapping, chainfile, infile,  outfile_prefix, chrom_size, IS_size=200, IS_std=30, fold=3):
 			usage="CrossMap.py bam input_chain_file input_bam_file output_file [options]\nNote: If output_file == STDOUT or -, CrossMap will write BAM file to the screen"
 			parser = optparse.OptionParser(usage, add_help_option=False)
 			parser.add_option("-m", "--mean", action="store",type="float",dest="insert_size", default=200.0, help="Average insert size of pair-end sequencing (bp). [default=%default]")
 			parser.add_option("-s", "--stdev", action="store",type="float",dest="insert_size_stdev", default=30.0, help="Stanadard deviation of insert size. [default=%default]" )
 			parser.add_option("-t", "--times", action="store",type="float",dest="insert_size_fold", default=3.0, help="A mapped pair is considered as \"proper pair\" if both ends mapped to different strand and the distance between them is less then '-t' * stdev from the mean. [default=%default]")
 			(options,args)=parser.parse_args()
-			
+
 			if len(args) >= 3:
 				print >>sys.stderr, "Insert size = %f" % (options.insert_size)
 				print >>sys.stderr, "Insert size stdev = %f" % (options.insert_size_stdev)
 				print >>sys.stderr, "Number of stdev from the mean = %f" % (options.insert_size_fold)
-				
+
 				chain_file = args[1]
 				in_file = args[2]
 				out_file = args[3] if len(args) >= 4 else None
 				(mapTree,targetChromSizes, sourceChromSizes) = read_chain_file(chain_file)
-				
+
 				if out_file in ["STDOUT","-"]:
 					out_file = None
-				
+
 				crossmap_bam_file(mapping = mapTree, chainfile = chain_file, infile = in_file, outfile_prefix = out_file, chrom_size = targetChromSizes, IS_size=options.insert_size, IS_std=options.insert_size_stdev, fold=options.insert_size_fold)
-				
+
 			else:
 				parser.print_help()
 		elif sys.argv[1].lower() == 'vcf':
@@ -1339,12 +1344,12 @@ if __name__=='__main__':
 				crossmap_vcf_file(mapping = mapTree, infile= in_file, outfile = out_file, liftoverfile = sys.argv[2], refgenome = genome_file)
 			else:
 				vcf_help()
-				sys.exit(0)			
+				sys.exit(0)
 		else:
 			general_help()
 			sys.exit(0)
-	
-	
-		
-	
-	
+
+
+
+
+
